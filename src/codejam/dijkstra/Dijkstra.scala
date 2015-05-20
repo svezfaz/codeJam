@@ -8,114 +8,101 @@ import scala.annotation.tailrec
 object Dijkstra extends Problem {
 
   override val filenames = List(
-    "C-example.in")//,
-    //"C-small-practice.in",
-    //"C-large-practice.in")
+    "C-example.in",
+    "C-small-practice.in",
+    "C-large-practice.in"
+  )
 
   override def process(filename: String) = {
     val linesIterator = Io.readFile(filename, getClass).drop(1) // dropping first line
     val solutions = linesIterator
-      .sliding(2, 2) // 2 lines at a time
-      .map(lines => lines(1) * lines.head.split(" ")(1).toInt) // multiply 2nd line by the 2nd digit of 1st line
-      .toList
-      .zipWithIndex
-      .map((lineAndIndex:(String, Int)) => solveLine(lineAndIndex._1, lineAndIndex._2 + 1))
+        .sliding(2, 2) // 2 lines at a time
+        .map(lines => (lines(1), lines.head.split(" ")(1).toLong)) // multiply 2nd line by the 2nd part of 1st line
+        .toList
+        .zipWithIndex
+        .map{case ((line, factor), index) => solveLine(line, factor, index + 1)}
 
     Io.saveToFile(Io.replaceExtension(filename, "out"), solutions)
   }
 
-  def solveLine(line: String, caseIndex: Int): String = {
-    val solution = solveCase(toQuaternions(line)) match {
+  def solveLine(line: String, factor: Long, caseIndex: Int): String = {
+    val solution = solveCase(new RepeatedArray[Quaternion](line map (Quaternion(_)) toArray, factor)) match {
       case true => "YES"
       case false => "NO"
     }
+    println(s"Case #$caseIndex: $solution")
     s"Case #$caseIndex: $solution"
   }
 
-  def solveCase(quaternions: List[Quaternion]): Boolean = {
-    solveCaseRec(quaternions, 1, 2)
-  }
+  def solveCase(quaternions: RepeatedArray[Quaternion]): Boolean = {
 
-  @tailrec
-  def solveCaseRec(quaternions: List[Quaternion], index1: Int, index2:Int): Boolean = {
-    lazy val length = quaternions.length
-    
-    def moveIndex1: (Int, Int) = ???
-      //todo move index1 and possibly index2. check for limit cases
+    val croppedQuaternions = quaternions.withFactor(Math.min(8, quaternions.factor))
+    val length = croppedQuaternions.length
 
-    def moveIndex2: (Int, Int) = ???
-      //todo move index2. check for limit cases
+    case class Solution(index: Int, reduction: Quaternion, foundFirstMatch: Boolean){
+      def move =
+        if (index >= length - 1)
+          None
+        else if (!foundFirstMatch && reduction == I)
+          Some(Solution(index + 1, croppedQuaternions(index + 1), foundFirstMatch = true))
+        else
+          Some(Solution(index + 1, reduction * croppedQuaternions(index + 1), foundFirstMatch))
 
-    if (reducesTo(quaternions.take(index1), I)){
-      if (reducesTo(quaternions.drop(index1).take(index2 - index1), J)){
-        if (reducesTo(quaternions.drop(index2), K)){
-          true
-        } else {
-          solveCaseRec(quaternions, moveIndex1._1, moveIndex1._2)
-        }
-      } else{
-        solveCaseRec(quaternions, moveIndex2._1, moveIndex2._2)
-      }
-    } else {
-      solveCaseRec(quaternions, moveIndex1._1, moveIndex1._2)
+      val isValid = foundFirstMatch && reduction == J
     }
+
+    @tailrec
+    def solveCaseRec(optSolution: Option[Solution]): Boolean = optSolution match {
+        case None => false
+        case Some(sol) => sol.isValid match {
+          case true => true
+          case false => solveCaseRec(sol.move)
+        }
+      }
+
+    if (length < 3 || !reducesTo(quaternions, -ONE))
+      false
+    else
+      solveCaseRec(Some(Solution(0, quaternions(0), foundFirstMatch = false)))
+
   }
 
-  def toQuaternions(s: String): List[Quaternion] = s map toQuaternion toList
+  def reducesTo(quaternions: RepeatedArray[Quaternion], target: Quaternion) =
+    quaternions.internal.reduce(_ * _).pow(quaternions.factor) == target
 
-  def toQuaternion(c: Char): Quaternion = c match {
-    case 'j' => Quaternion(JVal)
-    case 'i' => Quaternion(IVal)
-    case 'k' => Quaternion(KVal)
-    case x => throw new IllegalArgumentException(x + " is not a quaternion value")
-  }
+  case class Quaternion(value: Char, sign: Boolean = true){
 
-  def reducesTo(quaternions: List[Quaternion], target: Quaternion) = quaternions.reduce(_ * _) == target
-
-  def step(quaternions: List[Quaternion], target: Quaternion) = {
-    val temp = (1 to quaternions.length).map(index => (index, quaternions.take(index)))
-      .filter(pair => reducesTo(pair._2, target)).map(_._1).map(quaternions.drop).toList
-    println(temp)
-    temp
-  }
-
-  def isSolution(quaternions: List[Quaternion], index1: Int, index2:Int): Boolean = {
-    reducesTo(quaternions.take(index1), I) &&
-      reducesTo(quaternions.drop(index1).take(index2 - index1), J) &&
-      reducesTo(quaternions.drop(index2), K)
-  }
-
-
-  sealed trait QuaternionVal
-  case object IVal extends QuaternionVal
-  case object JVal extends QuaternionVal
-  case object KVal extends QuaternionVal
-  case object ONEVal extends QuaternionVal
-
-  case class Quaternion(value: QuaternionVal, sign: Boolean = true){
     def * (that: Quaternion) : Quaternion = {
       val aggregatedSign = this.sign == that.sign
       (this.value, that.value) match {
-        case (ONEVal, q2) => Quaternion(q2, aggregatedSign)
-        case (q1, q2) if q1 == q2 => -Quaternion(ONEVal, aggregatedSign)
-        case (IVal, ONEVal) => Quaternion(IVal, aggregatedSign)
-        case (IVal, JVal) => Quaternion(KVal, aggregatedSign)
-        case (IVal, KVal) => -Quaternion(JVal, aggregatedSign)
-        case (JVal, ONEVal) => Quaternion(JVal, aggregatedSign)
-        case (JVal, IVal) => -Quaternion(KVal, aggregatedSign)
-        case (JVal, KVal) => Quaternion(IVal, aggregatedSign)
-        case (KVal, ONEVal) => Quaternion(KVal, aggregatedSign)
-        case (KVal, IVal) => Quaternion(JVal, aggregatedSign)
-        case (KVal, JVal) => -Quaternion(IVal, aggregatedSign)
+        case ('1', q2) => Quaternion(q2, aggregatedSign)
+        case (q1, q2) if q1 == q2 => -Quaternion('1', aggregatedSign)
+        case ('i', '1') => Quaternion('i', aggregatedSign)
+        case ('i', 'j') => Quaternion('k', aggregatedSign)
+        case ('i', 'k') => -Quaternion('j', aggregatedSign)
+        case ('j', '1') => Quaternion('j', aggregatedSign)
+        case ('j', 'i') => -Quaternion('k', aggregatedSign)
+        case ('j', 'k') => Quaternion('i', aggregatedSign)
+        case ('k', '1') => Quaternion('k', aggregatedSign)
+        case ('k', 'i') => Quaternion('j', aggregatedSign)
+        case ('k', 'j') => -Quaternion('i', aggregatedSign)
       }
     }
 
     def unary_- : Quaternion = Quaternion(value, !sign)
+
+    def pow(exp: Long) : Quaternion = exp match {
+      case 0 => ONE
+      case 1 => this
+      case n if n % 2 == 0 => (this * this).pow(n / 2)
+      case n => this * (this * this).pow((n - 1) / 2)
+    }
   }
 
-  val I = Quaternion(IVal)
-  val J = Quaternion(JVal)
-  val K = Quaternion(KVal)
+  val I = Quaternion('i')
+  val J = Quaternion('j')
+  val K = Quaternion('k')
+  val ONE = Quaternion('1')
 
 
 }
